@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using System.Configuration;
 using Microsoft.ProjectOxford.Vision.Contract;
 using System.IO;
 
@@ -24,8 +25,8 @@ namespace ConsoleApplication1
             using (var ms = new MemoryStream(filebody, true))
             {
                 //以繁體中文辨識
-                OcrResults = visionClient.RecognizeTextAsync(ms, LanguageCodes.AutoDetect).Result;
-                //OcrResults = visionClient.RecognizeTextAsync(ms, languageCodes).Result;
+                //OcrResults = visionClient.RecognizeTextAsync(ms, LanguageCodes.AutoDetect).Result;
+                OcrResults = visionClient.RecognizeTextAsync(ms, languageCodes).Result;
             }
 
             //抓取每一區塊的辨識結果
@@ -55,15 +56,52 @@ namespace ConsoleApplication1
 
     class Program
     {
+        static void ValidateFolder(string folder)
+        {
+            if (!Directory.Exists(folder))
+            {
+                Directory.CreateDirectory(folder);
+            }
+        }
+
         static void Main(string[] args)
         {
-            string apiKey = "XXXXXXXXX   XXXXXXXXX"; //Manage keys from Azure Computer Vision
+			//設定檔
             string apiRoot = @"https://southeastasia.api.cognitive.microsoft.com/vision/v1.0";
-            string path = "XXXXXXXXX   XXXXXXXXX"; //file to be transacted, ex: @"C:\tmp\TheFour\Image 0043.jpg";
+			string languageCode = "zh-Hant";
 
-            var fileBody = File.ReadAllBytes(path);
-            var ocrText = OcrResultsHelper.GetOcrResults(apiKey, apiRoot, fileBody, "zh-Hant");
-            Console.WriteLine(ocrText);
+            string apiKey = ConfigurationManager.AppSettings["apiKey"]; //Manage keys from Azure Computer Vision
+            string folderImgSource = ConfigurationManager.AppSettings["DirectoryImgSource"];
+            string folderImgMoveTo = ConfigurationManager.AppSettings["DirectoryImgMoveTo"];
+            string folderText = ConfigurationManager.AppSettings["DirectoryText"];
+            int timeout = Convert.ToInt32(ConfigurationManager.AppSettings["SleepSeconds"]) * 1000;
+
+			//確認資料夾存在
+            ValidateFolder(folderImgSource);
+            ValidateFolder(folderImgMoveTo);
+            ValidateFolder(folderText);
+
+			//讀取資料夾中的所有圖片檔
+			//1.圖片轉為文字
+			//2.轉完後寫入文字檔
+			//3.成功後將原始圖片檔搬移
+            foreach (string path in Directory.GetFiles(folderImgSource))
+            {
+                try
+                {
+                    var fileBody = File.ReadAllBytes(path);
+                    var ocrText = OcrResultsHelper.GetOcrResults(apiKey, apiRoot, fileBody, languageCode);
+
+                    File.WriteAllText(path.Replace(folderImgSource, folderText) + ".txt", ocrText, Encoding.UTF8);
+                    File.Move(path, path.Replace(folderImgSource, folderImgMoveTo));
+                    Console.WriteLine(ocrText);
+                    System.Threading.Thread.Sleep(timeout);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex.Message);
+                }
+            }
         }
 
         /*
